@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>洪泛模拟程序</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            position: fixed;
+            display: flex;
+            background-color: #f7f7f7;
+            height: 100%;
+            width: 100%;
+            font-size: 14px;
+        }
+
+        button {
+            cursor: pointer;
+            box-sizing: border-box;
+            transition: all 0.1s ease-in-out;
+            line-height: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            white-space: nowrap;
+            text-decoration: none;
+            min-width: 32px;
+            padding: 0 8px;
+            height: 32px;
+            min-height: 32px;
+            width: max-content;
+            border: 2px solid transparent;
+            border-radius: 2px;
+            color: #262626;
+            fill: #262626;
+            background: #E5E5E5;
+        }
+
+        button.primary {
+            color: #FFFFFF;
+            fill: #FFFFFF;
+            background: #0078D4;
+        }
+
+        #network-info,
+        #node-info {
+            flex-basis: 250px;
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+            box-shadow: 0px 0px 12px 0px rgba(0, 0, 0, 0.2);
+            padding: 24px;
+            z-index: 1;
+            overflow: auto;
+        }
+
+        #network-info-list,
+        #node-info-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #network-info>*,
+        #node-info>* {
+            margin-bottom: 24px;
+        }
+
+        #network-info-list>li,
+        #node-info-list>li {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 0;
+        }
+
+        #network-info-list input {
+            margin: 0;
+            box-sizing: border-box;
+            transition: all 0.2s ease-in-out;
+            font-family: inherit;
+            font-size: 14px;
+            line-height: 20px;
+            font-weight: 400;
+            background: #F7F7F7;
+            border: 1px solid #B6B6B6;
+            color: #262626;
+            padding: 0 11px;
+            border-radius: 2px;
+            height: 32px;
+            width: 72px;
+        }
+
+        main {
+            flex-grow: 1;
+            display: flex;
+            align-items: center;
+            overflow: auto;
+            flex-shrink: 1;
+        }
+
+        #canvas-wrapper {
+            padding: 12px 24px;
+            width: max-content;
+            margin: auto;
+        }
+
+        #canvas {
+            background-color: white;
+            box-shadow: 0 0 4px 0 rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            z-index: 0;
+        }
+    </style>
+</head>
+
+<body>
+    <aside id="network-info">
+        <h2>传感器网络信息</h2>
+        <ul id="network-info-list">
+            <li>
+                <div>节点数目</div>
+                <div id="node-count"></div>
+            </li>
+            <li>
+                <div>消息数目</div>
+                <div id="msg-count"></div>
+            </li>
+            <li>
+                <div>初始 TTL</div>
+                <input type="number" id="ttl-setter"></input>
+            </li>
+            <li>
+                <div>最大探查距离</div>
+                <input type="number" id="max-find-dst-setter"></input>
+            </li>
+        </ul>
+        <button id="pause-button" class="primary">暂停</button>
+        <button id="add-node-button">添加节点</button>
+        <button id="show-dst-button">是否显示距离</button>
+        <h2>使用说明</h2>
+        <p><strong>拖动</strong>节点，节点将自动搜索可达节点，并用线显示信道。</p>
+        <p>点击节点，将<strong>聚焦节点</strong>，聚焦节点的信息将显示在右侧面板，并可通过该面板进行节点相关操作，如<strong>发送消息</strong></p>
+        <p>左侧面板可查看和设置网络参数，如<strong>最大可达距离</strong>，<strong>初始 TTL</strong>等。</p>
+    </aside>
+    <main>
+        <div id="canvas-wrapper"></div>
+    </main>
+    <aside id="node-info">
+        <h2>焦点节点信息</h2>
+        <ul id="node-info-list">
+            <li>
+                <div>节点 ID</div>
+                <div id="node-ID"></div>
+            </li>
+            <li>
+                <div>连接数</div>
+                <div id="connections-count"></div>
+            </li>
+            <li>
+                <div>坐标 x</div>
+                <div id="node-x"></div>
+            </li>
+            <li>
+                <div>坐标 y</div>
+                <div id="node-y"></div>
+            </li>
+        </ul>
+        <button id="send-message-button" class="primary">发送消息</button>
+        <button id="remove-node-button">删除节点</button>
+    </aside>
+    <script>
+        const CANVAS_W = 1000
+        const CANVAS_H = 1000
+        const C_VIEW_W = 500
+        const C_VIEW_H = 500
+        const MSG_SPEED = 80 / 1000
+
+        const NODE_RADIUS = 16
+        const FOCUS_RADIUS = 24
+        const MSG_RADIUS = 6
+        const DEFAULT_MAX_TTL = 3
+        const DEFAULT_MAX_FIND_DST = 300
+
+        const canvasWrapperEle = document.getElementById('canvas-wrapper')
+        const nodeCountEle = document.getElementById('node-count')
+        const addNodeButton = document.getElementById('add-node-button')
+        const removeNodeButton = document.getElementById('remove-node-button')
+        const ttlSetterEle = document.getElementById('ttl-setter')
+        const maxFindDstSetter = document.getElementById('max-find-dst-setter')
+        const connectionsCountEle = document.getElementById('connections-count')
+        const nodeIDEle = document.getElementById('node-ID')
+        const nodeXEle = document.getElementById('node-x')
+        const nodeYEle = document.getElementById('node-y')
+        const showDstButton = document.getElementById('show-dst-button')
+        const sendMessageButton = document.getElementById('send-message-button')
+        const msgCountEle = document.getElementById('msg-count')
+
+        const canvas = document.createElement('canvas')
+        const ctx = canvas.getContext('2d')
+
+        ttlSetterEle.value = DEFAULT_MAX_TTL
+        maxFindDstSetter.value = DEFAULT_MAX_FIND_DST
+        addNodeButton.addEventListener('click', () => { emit('add-node') })
+        showDstButton.addEventListener('click', (e) => { emit('show-dst', e) })
+        canvas.addEventListener('mouseup', (e) => { emit('canvas-mouseup', e) })
+        removeNodeButton.addEventListener('click', () => { emit('remove-node') })
+        ttlSetterEle.addEventListener('change', (e) => { emit('ttl-change', e) })
+        canvas.addEventListener('mousedown', (e) => { emit('canvas-mousedown', e) })
+        canvas.addEventListener('mousemove', (e) => { emit('canvas-mousemove', e) })
+        maxFindDstSetter.addEventListener('change', (e) => { emit('max-find-dst-change', e) })
+        sendMessageButton.addEventListener('click', (e) => { emit('send-message-button-click') })
+
+
+        const defaultNode = {
+            ID: 0,
+            x: 0,
+            y: 0
+        }
+
+        const defaultMessage = {
+            ID: 0,
+            sendTime: 0,
+            TTL: 0,
+            src: 0,
+            dst: 0,
+        }
+
+        const defaultEdge = {
+            node1: 0,
+            node2: 0,
+            dst: 0
+        }
+
+        const defaultState = {
+            nodes: [, defaultNode].slice(0, 0),
+            edges: [, defaultEdge].slice(0, 0),
+            messages: [, defaultMessage].slice(0, 0),
+            maxTTL: DEFAULT_MAX_TTL,
+            pickedUpBrush: false,
+            nodeIsPickedUp: -1,
+            focusedNodeIndex: 0,
+            stroking: false,
+            maxFindDst: DEFAULT_MAX_FIND_DST,
+            messagesCount: 0,
+            nodesCount: 11,
+            showDist: false
+        }
+
+        let state = defaultState
+
+        canvas.id = 'canvas'
+        canvas.style = `height: ${C_VIEW_H}px; width: ${C_VIEW_W}px;`
+        canvas.width = 1000
+        canvas.height = 1000
+        canvasWrapperEle.appendChild(canvas)
+
+        emit('set-nodes', createNodes())
+
+        mainLoop()
+
+
+
+        // ===== Functions =====
+
+        function mainLoop(now = performance.now()) {
+            requestAnimationFrame((now) => { mainLoop(now) })
+
+            emit('update-messages', now)
+            emit('update-dom')
+            emit('update-canvas', now)
+        }
+
+        function createNodes() {
+            let nodes = []
+            for (let i = 1; i < 12; i++) {
+                nodes.push({
+                    ID: i + 1,
+                    x: Math.round((Math.random() - 0.5) * 600 + CANVAS_W / 2),
+                    y: Math.round((Math.random() - 0.5) * 600 + CANVAS_H / 2)
+                })
+            }
+            return nodes
+        }
+
+        function emit(event = '', ...args) {
+            if (IO2Data(event, ...args))
+                return
+            if (data2Data(event, ...args))
+                return
+            if (data2View(event, ...args))
+                return
+            console.warn(`事件"${event}"未被捕获`)
+
+            function IO2Data() {
+                if (event === 'add-node') {
+                    state.nodesCount++
+                    state.nodes.push({
+                        ID: state.nodesCount,
+                        x: NODE_RADIUS * 2,
+                        y: NODE_RADIUS * 2
+                    })
+                    emit('update-edges')
+                    return true
+                }
+                if (event === 'ttl-change') {
+                    const e = args[0]
+                    state.maxTTL = e.currentTarget.value
+                    return true
+                }
+                if (event === 'max-find-dst-change') {
+                    const e = args[0]
+                    state.maxFindDst = e.currentTarget.value
+                    emit('update-edges')
+                    return true
+                }
+                if (event === 'canvas-mousedown') {
+                    const e = args[0]
+                    const x = e.offsetX / C_VIEW_W * CANVAS_W
+                    const y = e.offsetY / C_VIEW_H * CANVAS_H
+                    const nodeIndex = mouseOnNode(x, y)
+                    if (nodeIndex !== -1) emit('pick-up-node', nodeIndex)
+                    return true
+                }
+                if (event === 'canvas-mousemove') {
+                    const e = args[0]
+                    const x = e.offsetX / C_VIEW_W * CANVAS_W
+                    const y = e.offsetY / C_VIEW_H * CANVAS_H
+                    if (state.nodeIsPickedUp !== -1) emit('dragging-node', x, y)
+                    return true
+                }
+                if (event === 'canvas-mouseup') {
+                    const e = args[0]
+                    const x = e.offsetX / C_VIEW_W * CANVAS_W
+                    const y = e.offsetY / C_VIEW_H * CANVAS_H
+                    if (state.nodeIsPickedUp !== -1) emit('put-down-node')
+                    return true
+                }
+                if (event === 'remove-node') {
+                    const node = state.focusedNodeIndex
+                    state.nodes = state.nodes.filter((item, idx) => idx !== node)
+                    emit('focus-node', 0)
+                    emit('update-edges')
+                    return true
+                }
+                if (event === 'show-dst') {
+                    state.showDist = !state.showDist
+                    return true
+                }
+                if (event === 'send-message-button-click') {
+                    const nodeIndex = state.focusedNodeIndex
+                    const edges = state.edges
+                    for (let i in edges) {
+                        if (edges[i].node1 === nodeIndex) {
+                            emit('send-message', nodeIndex, edges[i].node2)
+                        }
+                        else if (edges[i].node2 === nodeIndex) {
+                            emit('send-message', nodeIndex, edges[i].node1)
+                        }
+                    }
+                    return true
+                }
+                return false
+            }
+
+            function data2Data() {
+                if (event === 'set-nodes') {
+                    const nodes = args[0]
+                    state.nodes = nodes
+                    emit('update-edges')
+                    emit('focus-node', 0)
+                    return true
+                }
+                if (event === 'pick-up-node') {
+                    const node = args[0]
+                    state.nodeIsPickedUp = node
+                    emit('focus-node', node)
+                    return true
+                }
+                if (event === 'dragging-node') {
+                    const x = args[0]
+                    const y = args[1]
+                    const node = state.nodeIsPickedUp
+                    state.nodes[node].x = x
+                    state.nodes[node].y = y
+                    emit('focus-node', node)
+                    emit('update-edges')
+                    return true
+                }
+                if (event === 'put-down-node') {
+                    const node = state.nodeIsPickedUp
+                    state.nodeIsPickedUp = -1
+                    emit('focus-node', node)
+                    emit('update-edges')
+                    return true
+                }
+                if (event === 'focus-node') {
+                    const node = args[0]
+                    state.focusedNodeIndex = node
+                    emit('update-node-info-panel', node)
+                    return true
+                }
+                if (event === 'update-edges') {
+                    const nodes = state.nodes
+                    let edges = []
+                    for (let i = 0; i < nodes.length; i++) {
+                        for (let j = i + 1; j < nodes.length; j++) {
+                            const x_1 = nodes[i].x
+                            const y_1 = nodes[i].y
+                            const x_2 = nodes[j].x
+                            const y_2 = nodes[j].y
+                            const dst = ((x_1 - x_2) ** 2 + (y_1 - y_2) ** 2) ** 0.5
+                            if (dst <= state.maxFindDst) {
+                                edges.push({
+                                    node1: i,
+                                    node2: j,
+                                    dst,
+                                })
+                            }
+                        }
+                    }
+                    state.edges = edges
+                    return true
+                }
+                if (event === 'send-message') {
+                    const src = args[0]
+                    const dst = args[1]
+                    const sendTime = args[2] || performance.now()
+                    const TTL = args[3] == undefined ? state.maxTTL : args[3]
+                    state.messagesCount++
+                    state.messages.push({
+                        ID: state.messagesCount,
+                        sendTime,
+                        TTL,
+                        src,
+                        dst
+                    })
+                    return true
+                }
+                if (event === 'update-messages') {
+                    for (let i = 0; i < state.messages.length; i++) {
+                        const now = args[0]
+                        const msg = state.messages[i]
+                        const srcNode = state.nodes[msg.src]
+                        const dstNode = state.nodes[msg.dst]
+                        const dist = Math.abs((srcNode.x - dstNode.x) ** 2 + (srcNode.y - dstNode.y) ** 2) ** 0.5
+                        const neededTime = dist / MSG_SPEED
+                        if (now - msg.sendTime < neededTime) {
+                            continue
+                        }
+                        if (msg.TTL - 1 === 0) {
+                            deleteMsg(msg.ID)
+                            i--
+                            continue
+                        }
+                        for (let i in state.edges) {
+                            const edge = state.edges[i]
+                            if (edge.node1 === msg.dst && edge.node2 !== msg.src) {
+                                emit('send-message', msg.dst, edge.node2, neededTime + msg.sendTime, msg.TTL - 1)
+                            }
+                            else if (edge.node2 === msg.dst && edge.node1 !== msg.src) {
+                                emit('send-message', msg.dst, edge.node1, neededTime + msg.sendTime, msg.TTL - 1)
+                            }
+                        }
+                        deleteMsg(msg.ID)
+                        i--
+
+                        function deleteMsg(ID) {
+                            state.messages = state.messages.filter((msg) => msg.ID !== ID)
+                        }
+                    }
+                    return true
+                }
+                return false
+            }
+
+            function data2View() {
+                if (event === 'update-node-info-panel') {
+                    const nodeIndex = state.focusedNodeIndex
+                    const connectionsCount = countConnections(nodeIndex)
+                    if (connectionsCountEle.textContent !== connectionsCount.toString())
+                        connectionsCountEle.textContent = connectionsCount.toString()
+                    if (nodeIDEle.textContent !== state.nodes[nodeIndex]?.ID.toString())
+                        nodeIDEle.textContent = state.nodes[nodeIndex]?.ID
+                    if (nodeXEle.textContent !== state.nodes[nodeIndex]?.x.toString())
+                        nodeXEle.textContent = state.nodes[nodeIndex]?.x
+                    if (nodeYEle.textContent !== state.nodes[nodeIndex]?.y)
+                        nodeYEle.textContent = state.nodes[nodeIndex]?.y
+                    return true
+                }
+                if (event === 'update-dom') {
+                    if (parseInt(nodeCountEle.textContent) !== state.nodes.length) {
+                        nodeCountEle.textContent = state.nodes.length.toString()
+                    }
+                    if (!isNaN(msgCountEle.textContent)
+                        && parseInt(msgCountEle.textContent) !== state.messages.length) {
+                        msgCountEle.textContent = state.messages.length.toString()
+                    }
+                    emit('update-node-info-panel')
+                    return true
+                }
+                if (event === 'paint-edges') {
+                    const nodes = args[0]
+                    const edges = args[1]
+                    ctx.strokeStyle = 'rgb(0, 120, 212)'
+                    ctx.lineWidth = 2
+                    edges.forEach(edge => {
+                        const x1 = nodes[edge.node1].x
+                        const y1 = nodes[edge.node1].y
+                        const x2 = nodes[edge.node2].x
+                        const y2 = nodes[edge.node2].y
+                        ctx.beginPath()
+                        ctx.moveTo(x1, y1)
+                        ctx.lineTo(x2, y2)
+                        ctx.stroke()
+                    })
+                    return true
+                }
+                if (event === 'paint-nodes') {
+                    const nodes = args[0]
+                    const focusedNodeIndex = args[1]
+                    const focusedNode = nodes[focusedNodeIndex]
+                    ctx.lineWidth = 4
+                    // 绘制圆点
+                    ctx.strokeStyle = '#0078d4'
+                    ctx.fillStyle = '#c7e0f4'
+                    nodes.forEach(node => {
+                        ctx.beginPath()
+                        ctx.arc(node.x, node.y, NODE_RADIUS, 0, 2 * Math.PI)
+                        ctx.stroke()
+                        ctx.fill()
+                    })
+                    // 绘制聚焦圆环
+                    ctx.strokeStyle = '#0078d4af'
+                    ctx.beginPath()
+                    ctx.arc(focusedNode.x, focusedNode.y, FOCUS_RADIUS, 0, 2 * Math.PI)
+                    ctx.stroke()
+                    // 绘制标签
+                    ctx.fillStyle = '#0078d4'
+                    ctx.font = '20px consolas'
+                    ctx.textAlign = 'center'
+                    ctx.textBaseline = 'middle'
+                    nodes.forEach(node => {
+                        const IDText = node.ID.toString()
+                        ctx.fillText(IDText, node.x, node.y)
+                    })
+                    return true
+                }
+                if (event === 'paint-messages') {
+                    const nodes = args[0]
+                    const edges = args[1]
+                    const msgs = args[2]
+                    const now = args[3]
+                    ctx.lineWidth = 2
+                    ctx.font = '20px consolas'
+                    ctx.textAlign = 'center'
+                    ctx.textBaseline = 'middle'
+                    ctx.fillStyle = '#dff6dd'
+                    ctx.strokeStyle = '#107c10'
+                    // 绘制圆点
+                    for (let i = 0; i < msgs.length; i++) {
+                        const msg = msgs[i]
+                        const srcNode = nodes[msg.src]
+                        const dstNode = nodes[msg.dst]
+                        const dist = Math.abs((srcNode.x - dstNode.x) ** 2 + (srcNode.y - dstNode.y) ** 2) ** 0.5
+                        const neededTime = dist / MSG_SPEED
+                        const coveredTime = now - msg.sendTime
+                        const percentage = coveredTime / neededTime
+                        const coveredX = (dstNode.x - srcNode.x) * percentage
+                        const coveredY = (dstNode.y - srcNode.y) * percentage
+                        const x = srcNode.x + coveredX
+                        const y = srcNode.y + coveredY
+                        ctx.beginPath()
+                        ctx.arc(x, y, MSG_RADIUS, 0, 2 * Math.PI)
+                        ctx.fill()
+                        ctx.beginPath()
+                        ctx.arc(x, y, MSG_RADIUS, 0, 2 * Math.PI)
+                        ctx.stroke()
+                    }
+                    // 绘制标签
+                    ctx.fillStyle = '#222222'
+                    for (let i = 0; i < msgs.length; i++) {
+                        const msg = msgs[i]
+                        const srcNode = nodes[msg.src]
+                        const dstNode = nodes[msg.dst]
+                        const dist = Math.abs((srcNode.x - dstNode.x) ** 2 + (srcNode.y - dstNode.y) ** 2) ** 0.5
+                        const neededTime = dist / MSG_SPEED
+                        const coveredTime = now - msg.sendTime
+                        const percentage = coveredTime / neededTime
+                        const coveredX = (dstNode.x - srcNode.x) * percentage
+                        const coveredY = (dstNode.y - srcNode.y) * percentage
+                        const x = srcNode.x + coveredX
+                        const y = srcNode.y + coveredY
+                        const IDText = msg.ID.toString()
+                        ctx.fillText(IDText, x, y + MSG_RADIUS + 10)
+                    }
+                    return true
+                }
+                if (event === 'paint-edge-tags') {
+                    const nodes = args[0]
+                    const edges = args[1]
+                    ctx.fillStyle = '#222222'
+                    ctx.font = '20px consolas'
+                    ctx.textAlign = 'center'
+                    ctx.textBaseline = 'middle'
+                    edges.forEach(edge => {
+                        const dstText = edge.dst.toFixed(2)
+                        const textWidth = ctx.measureText(dstText).width
+                        const x1 = nodes[edge.node1].x
+                        const y1 = nodes[edge.node1].y
+                        const x2 = nodes[edge.node2].x
+                        const y2 = nodes[edge.node2].y
+                        const xText = (x1 + x2) / 2
+                        const yText = (y1 + y2) / 2
+                        ctx.fillText(dstText, xText, yText)
+                    })
+                    return true
+                }
+                if (event === 'update-canvas') {
+                    const now = args[0]
+                    const nodes = state.nodes
+                    const edges = state.edges
+                    const msgs = state.messages
+                    const showDist = state.showDist
+                    const focusedNodeIndex = state.focusedNodeIndex
+
+                    ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+                    emit('paint-edges', nodes, edges)
+                    emit('paint-nodes', nodes, focusedNodeIndex)
+                    emit('paint-messages', nodes, edges, msgs, now)
+                    if (showDist) emit('paint-edge-tags', nodes, edges)
+
+                    return true
+                }
+                return false
+            }
+
+            function countConnections(nodeIndex) {
+                return state.edges.filter(edge => (
+                    edge.node1 === nodeIndex || edge.node2 === nodeIndex
+                )).length
+            }
+
+            function mouseOnNode(x, y) {
+                for (let i = state.nodes.length - 1; i > -1; i--) {
+                    const xNode = state.nodes[i].x
+                    const yNode = state.nodes[i].y
+                    const dst = ((xNode - x) ** 2 + (yNode - y) ** 2) ** 0.5
+                    if (dst <= NODE_RADIUS) return i
+                }
+                return -1
+            }
+        }
+
+    </script>
+</body>
+
+</html>
