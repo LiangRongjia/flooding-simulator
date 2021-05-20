@@ -203,6 +203,9 @@
         const DEFAULT_MAX_TTL = 3
         const DEFAULT_MAX_FIND_DST = 300
 
+        const ONE_MSG_CIRCLE_CANVAS = getOneMsgCircleCanvas()
+        const ONE_NODE_CIRCLE_CANVAS = getOneNodeCircleCanvas()
+        const ONE_NODE_F_CIRCLE_CANVAS = getOneNodeFCircleCanvas()
 
         const defaultNode = {
             ID: 0,
@@ -223,7 +226,6 @@
             node2: 0,
             dst: 0
         }
-
 
         createESV.viewElements = (() => {
             const nodeCountEle = document.getElementById('node-count')
@@ -301,27 +303,12 @@
             vEles.nodeYEle.textContent = nodes[nodeIndex]?.y
             nodesEdgesRePaint(states, vEles)
         })
-
         setEffect('maxFindDst', (state, vEles) => {
             nodesEdgesRePaint(state, vEles)
         })
-
-        function nodesEdgesRePaint(states, vEles) {
-            const nodes = states.nodes
-            const nodeIndex = states.focusedNodeIndex
-            const edges = getEdges(nodes, states.maxFindDst)
-            const showDist = states.showDist
-            const focusedNodeIndex = states.focusedNodeIndex
-            vEles.nodesEdgesCtx.clearRect(0, 0, CANVAS_W, CANVAS_H)
-            paintEdges(vEles, nodes, edges)
-            paintNodes(vEles, nodes, focusedNodeIndex)
-            if (showDist) paintEdgeTags(vEles, edges, nodes)
-        }
-
         setEffect('messages', (states, vEles) => {
             vEles.msgCountEle.textContent = states.messages.length.toString()
         })
-
         setEffect('focusedNodeIndex', (states, vEles) => {
             const nodes = states.nodes
             const focusedNodeIndex = states.focusedNodeIndex
@@ -333,11 +320,9 @@
             vEles.nodeYEle.textContent = nodes[focusedNodeIndex]?.y
             nodesEdgesRePaint(states, vEles)
         })
-
         setEffect('messagesCount', (states, vEles) => {
             const { msgCountEle } = vEles
         })
-
         setEffect('now', (states, vEles) => {
             if (states.messages.length === 0) {
                 vEles.messagesCtx.clearRect(0, 0, CANVAS_W, CANVAS_H)
@@ -376,7 +361,6 @@
                 }
             ]
         })
-
         on('send-message-button-click', (states) => {
             const focusedNodeIndex = states.focusedNodeIndex
             const edges = getEdges(states.nodes, states.maxFindDst)
@@ -401,11 +385,9 @@
                 }
             }
         })
-
         on('show-dst', states => {
             states.showDist = !states.showDist
         })
-
         on('remove-node', states => {
             states.nodes = states.nodes.filter((item, idx) =>
                 (idx !== states.focusedNodeIndex)
@@ -529,35 +511,45 @@
         function paintEdges(vEles, nodes, edges) {
             vEles.nodesEdgesCtx.strokeStyle = 'rgb(0, 120, 212)'
             vEles.nodesEdgesCtx.lineWidth = 2
+            vEles.nodesEdgesCtx.beginPath()
             edges.forEach(edge => {
                 const x1 = nodes[edge.node1].x
                 const y1 = nodes[edge.node1].y
                 const x2 = nodes[edge.node2].x
                 const y2 = nodes[edge.node2].y
-                vEles.nodesEdgesCtx.beginPath()
                 vEles.nodesEdgesCtx.moveTo(x1, y1)
                 vEles.nodesEdgesCtx.lineTo(x2, y2)
-                vEles.nodesEdgesCtx.stroke()
             })
+            vEles.nodesEdgesCtx.stroke()
+        }
+        function nodesEdgesRePaint(states, vEles) {
+            const nodes = states.nodes
+            const nodeIndex = states.focusedNodeIndex
+            const edges = getEdges(nodes, states.maxFindDst)
+            const showDist = states.showDist
+            const focusedNodeIndex = states.focusedNodeIndex
+            vEles.nodesEdgesCtx.clearRect(0, 0, CANVAS_W, CANVAS_H)
+            paintEdges(vEles, nodes, edges)
+            paintNodes(vEles, nodes, focusedNodeIndex)
+            if (showDist) paintEdgeTags(vEles, edges, nodes)
         }
         function paintNodes(vEles, nodes, focusedNodeIndex) {
             const focusedNode = nodes[focusedNodeIndex]
             if (focusedNode === undefined) return
-            vEles.nodesEdgesCtx.lineWidth = 4
             // 绘制圆点
-            vEles.nodesEdgesCtx.strokeStyle = '#0078d4'
-            vEles.nodesEdgesCtx.fillStyle = '#c7e0f4'
             nodes.forEach(node => {
-                vEles.nodesEdgesCtx.beginPath()
-                vEles.nodesEdgesCtx.arc(node.x, node.y, NODE_RADIUS, 0, 2 * Math.PI)
-                vEles.nodesEdgesCtx.stroke()
-                vEles.nodesEdgesCtx.fill()
+                vEles.nodesEdgesCtx.drawImage(
+                    ONE_NODE_CIRCLE_CANVAS,
+                    node.x - ONE_NODE_CIRCLE_CANVAS.width / 2,
+                    node.y - ONE_NODE_CIRCLE_CANVAS.height / 2,
+                )
             })
             // 绘制聚焦圆环
-            vEles.nodesEdgesCtx.strokeStyle = '#0078d4af'
-            vEles.nodesEdgesCtx.beginPath()
-            vEles.nodesEdgesCtx.arc(focusedNode.x, focusedNode.y, FOCUS_RADIUS, 0, 2 * Math.PI)
-            vEles.nodesEdgesCtx.stroke()
+            vEles.nodesEdgesCtx.drawImage(
+                ONE_NODE_F_CIRCLE_CANVAS,
+                focusedNode.x - ONE_NODE_F_CIRCLE_CANVAS.width / 2,
+                focusedNode.y - ONE_NODE_F_CIRCLE_CANVAS.height / 2,
+            )
             // 绘制标签
             vEles.nodesEdgesCtx.fillStyle = '#0078d4'
             vEles.nodesEdgesCtx.font = '20px consolas'
@@ -569,12 +561,6 @@
             })
         }
         function paintMessages(vEles, nodes, msgs, now) {
-            vEles.messagesCtx.lineWidth = 2
-            vEles.messagesCtx.font = '20px consolas'
-            vEles.messagesCtx.textAlign = 'center'
-            vEles.messagesCtx.textBaseline = 'middle'
-            vEles.messagesCtx.fillStyle = '#dff6dd'
-            vEles.messagesCtx.strokeStyle = '#107c10'
             // 绘制圆点
             for (let i = 0; i < msgs.length; i++) {
                 const msg = msgs[i]
@@ -588,14 +574,16 @@
                 const coveredY = (dstNode.y - srcNode.y) * percentage
                 const x = srcNode.x + coveredX
                 const y = srcNode.y + coveredY
-                vEles.messagesCtx.beginPath()
-                vEles.messagesCtx.arc(x, y, MSG_RADIUS, 0, 2 * Math.PI)
-                vEles.messagesCtx.fill()
-                vEles.messagesCtx.beginPath()
-                vEles.messagesCtx.arc(x, y, MSG_RADIUS, 0, 2 * Math.PI)
-                vEles.messagesCtx.stroke()
+                vEles.messagesCtx.drawImage(
+                    ONE_MSG_CIRCLE_CANVAS,
+                    x - ONE_MSG_CIRCLE_CANVAS.width / 2,
+                    y - ONE_MSG_CIRCLE_CANVAS.width / 2
+                )
             }
             // 绘制标签
+            vEles.messagesCtx.font = '20px consolas'
+            vEles.messagesCtx.textAlign = 'center'
+            vEles.messagesCtx.textBaseline = 'middle'
             vEles.messagesCtx.fillStyle = '#222222'
             for (let i = 0; i < msgs.length; i++) {
                 const msg = msgs[i]
@@ -629,6 +617,59 @@
                 const yText = (y1 + y2) / 2
                 vEles.nodesEdgesCtx.fillText(dstText, xText, yText)
             })
+        }
+        function getOneMsgCircleCanvas() {
+            let canvas = document.createElement('canvas')
+            let ctx = canvas.getContext('2d')
+
+            canvas.width = MSG_RADIUS * 2 + 10
+            canvas.height = MSG_RADIUS * 2 + 10
+
+            ctx.lineWidth = 2
+            ctx.fillStyle = '#dff6dd'
+            ctx.strokeStyle = '#107c10'
+
+            ctx.beginPath()
+            ctx.arc(canvas.width / 2, canvas.width / 2, MSG_RADIUS, 0, 2 * Math.PI)
+            ctx.fill()
+            ctx.beginPath()
+            ctx.arc(canvas.width / 2, canvas.width / 2, MSG_RADIUS, 0, 2 * Math.PI)
+            ctx.stroke()
+            return canvas
+        }
+        function getOneNodeCircleCanvas() {
+            let canvas = document.createElement('canvas')
+            let ctx = canvas.getContext('2d')
+
+            canvas.width = NODE_RADIUS * 2 + 4
+            canvas.height = NODE_RADIUS * 2 + 4
+
+            ctx.lineWidth = 4
+            ctx.strokeStyle = '#0078d4'
+            ctx.fillStyle = '#c7e0f4'
+
+            ctx.beginPath()
+            ctx.arc(canvas.width / 2, canvas.height / 2, NODE_RADIUS, 0, 2 * Math.PI)
+            ctx.stroke()
+            ctx.fill()
+
+            return canvas
+        }
+        function getOneNodeFCircleCanvas() {
+            let canvas = document.createElement('canvas')
+            let ctx = canvas.getContext('2d')
+
+            canvas.width = FOCUS_RADIUS * 2 + 4
+            canvas.height = FOCUS_RADIUS * 2 + 4
+
+            ctx.lineWidth = 4
+            ctx.strokeStyle = '#0078d4af'
+
+            ctx.beginPath()
+            ctx.arc(canvas.width / 2, canvas.height / 2, FOCUS_RADIUS, 0, 2 * Math.PI)
+            ctx.stroke()
+
+            return canvas
         }
         function createESV() {
             createESV.defaultState = createESV.defaultState
