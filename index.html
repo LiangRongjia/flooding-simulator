@@ -108,14 +108,24 @@
         }
 
         #canvas-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
             padding: 12px 24px;
-            width: max-content;
+            width: fit-content;
+            min-width: fit-content;
             margin: auto;
         }
 
-        #canvas {
+        #nodes-edges-canvas {
             background-color: white;
             box-shadow: 0 0 4px 0 rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            z-index: 0;
+        }
+
+        #messages-canvas {
+            position: static;
             border-radius: 8px;
             z-index: 0;
         }
@@ -152,7 +162,10 @@
         <p>左侧面板可查看和设置网络参数，如<strong>最大可达距离</strong>，<strong>初始 TTL</strong>等。</p>
     </aside>
     <main>
-        <div id="canvas-wrapper"></div>
+        <div id="canvas-wrapper">
+            <canvas id="nodes-edges-canvas"></canvas>
+            <canvas id="messages-canvas"></canvas>
+        </div>
     </main>
     <aside id="node-info">
         <h2>焦点节点信息</h2>
@@ -175,7 +188,7 @@
             </li>
         </ul>
         <button id="send-message-button" class="primary">发送消息</button>
-        <button id="remove-node-button" onclick="esv.emit('remove-node')">删除节点</button>
+        <button id="remove-node-button">删除节点</button>
     </aside>
     <script>
         const CANVAS_W = 1000
@@ -213,65 +226,49 @@
 
 
         createESV.viewElements = (() => {
-            const canvasWrapperEle = document.getElementById('canvas-wrapper')
             const nodeCountEle = document.getElementById('node-count')
-            const addNodeButton = document.getElementById('add-node-button')
-            const removeNodeButton = document.getElementById('remove-node-button')
-            const ttlSetterEle = document.getElementById('ttl-setter')
-            const maxFindDstSetter = document.getElementById('max-find-dst-setter')
             const connectionsCountEle = document.getElementById('connections-count')
             const nodeIDEle = document.getElementById('node-ID')
             const nodeXEle = document.getElementById('node-x')
             const nodeYEle = document.getElementById('node-y')
-            const showDstButton = document.getElementById('show-dst-button')
-            const sendMessageButton = document.getElementById('send-message-button')
             const msgCountEle = document.getElementById('msg-count')
 
-            let bufferCanvas = document.createElement('canvas')
-            let bufferCtx = bufferCanvas.getContext('2d')
+            document.getElementById('remove-node-button').addEventListener('click', () => { emit('remove-node') })
+            document.getElementById('add-node-button').addEventListener('click', () => { emit('add-node') })
+            document.getElementById('ttl-setter').addEventListener('change', (e) => { emit('ttl-change', e) })
+            document.getElementById('max-find-dst-setter').addEventListener('change', (e) => { emit('max-find-dst-change', e) })
+            document.getElementById('send-message-button').addEventListener('click', (e) => { emit('send-message-button-click') })
+            document.getElementById('show-dst-button').addEventListener('click', (e) => { emit('show-dst', e) })
+            document.getElementById('ttl-setter').value = DEFAULT_MAX_TTL
+            document.getElementById('max-find-dst-setter').value = DEFAULT_MAX_FIND_DST
 
-            let canvas = document.createElement('canvas')
-            let ctx = canvas.getContext('2d')
 
-            ttlSetterEle.value = DEFAULT_MAX_TTL
-            maxFindDstSetter.value = DEFAULT_MAX_FIND_DST
-            addNodeButton.addEventListener('click', () => { esv.emit('add-node') })
-            showDstButton.addEventListener('click', (e) => { esv.emit('show-dst', e) })
-            canvas.addEventListener('mouseup', (e) => { esv.emit('canvas-mouseup', e) })
-            ttlSetterEle.addEventListener('change', (e) => { esv.emit('ttl-change', e) })
-            canvas.addEventListener('mousedown', (e) => { esv.emit('canvas-mousedown', e) })
-            canvas.addEventListener('mousemove', (e) => { esv.emit('canvas-mousemove', e) })
-            maxFindDstSetter.addEventListener('change', (e) => { esv.emit('max-find-dst-change', e) })
-            sendMessageButton.addEventListener('click', (e) => { esv.emit('send-message-button-click') })
+            let nodesEdgesCanvas = document.getElementById('nodes-edges-canvas')
+            let nodesEdgesCtx = nodesEdgesCanvas.getContext('2d')
+            nodesEdgesCanvas.style = `height: ${C_VIEW_H}px; width: ${C_VIEW_W}px;`
+            nodesEdgesCanvas.width = CANVAS_W
+            nodesEdgesCanvas.height = CANVAS_H
 
-            bufferCanvas.style = `height: ${C_VIEW_H}px; width: ${C_VIEW_W}px;`
-            bufferCanvas.width = 1000
-            bufferCanvas.height = 1000
-
-            canvas.id = 'canvas'
-            canvas.style = `height: ${C_VIEW_H}px; width: ${C_VIEW_W}px;`
-            canvas.width = 1000
-            canvas.height = 1000
-            canvasWrapperEle.appendChild(canvas)
+            let messagesCanvas = document.getElementById('messages-canvas')
+            let messagesCtx = messagesCanvas.getContext('2d')
+            messagesCanvas.style = `height: ${C_VIEW_H}px; width: ${C_VIEW_W}px; margin-top: ${-C_VIEW_H}px`
+            messagesCanvas.width = CANVAS_W
+            messagesCanvas.height = CANVAS_H
+            messagesCanvas.addEventListener('mouseup', (e) => { emit('canvas-mouseup', e) })
+            messagesCanvas.addEventListener('mousedown', (e) => { emit('canvas-mousedown', e) })
+            messagesCanvas.addEventListener('mousemove', (e) => { emit('canvas-mousemove', e) })
 
             return {
-                canvasWrapperEle,
                 nodeCountEle,
-                addNodeButton,
-                removeNodeButton,
-                ttlSetterEle,
-                maxFindDstSetter,
                 connectionsCountEle,
                 nodeIDEle,
                 nodeXEle,
                 nodeYEle,
-                showDstButton,
-                sendMessageButton,
                 msgCountEle,
-                bufferCanvas,
-                bufferCtx,
-                canvas,
-                ctx,
+                messagesCanvas,
+                messagesCtx,
+                nodesEdgesCanvas,
+                nodesEdgesCtx,
             }
         })()
 
@@ -288,58 +285,74 @@
             showDist: false
         }
 
-        const esv = createESV()
+        const { emit, on, setEffect } = createESV()
 
-        esv.setEffect('nodes', (states, vEles) => {
+        setEffect('nodes', (states, vEles) => {
             const nodes = states.nodes
             const nodeIndex = states.focusedNodeIndex
             const edges = getEdges(nodes, states.maxFindDst)
             const connectionsCount = countConnections(nodeIndex, edges)
+            const showDist = states.showDist
+            const focusedNodeIndex = states.focusedNodeIndex
             vEles.nodeCountEle.textContent = nodes.length
             vEles.connectionsCountEle.textContent = connectionsCount
             vEles.nodeIDEle.textContent = nodes[nodeIndex]?.ID
             vEles.nodeXEle.textContent = nodes[nodeIndex]?.x
             vEles.nodeYEle.textContent = nodes[nodeIndex]?.y
+            nodesEdgesRePaint(states, vEles)
         })
 
-        esv.setEffect('messages', (states, vEles) => {
-            vEles.msgCountEle.textContent = states.messages.length.toString()
+        setEffect('maxFindDst', (state, vEles) => {
+            nodesEdgesRePaint(state, vEles)
         })
 
-        esv.setEffect('focusedNodeIndex', (states, vEles) => {
+        function nodesEdgesRePaint(states, vEles) {
             const nodes = states.nodes
             const nodeIndex = states.focusedNodeIndex
             const edges = getEdges(nodes, states.maxFindDst)
-            const connectionsCount = countConnections(nodeIndex, edges)
-            vEles.connectionsCountEle.textContent = connectionsCount.toString()
-            vEles.nodeIDEle.textContent = nodes[nodeIndex]?.ID
-            vEles.nodeXEle.textContent = nodes[nodeIndex]?.x
-            vEles.nodeYEle.textContent = nodes[nodeIndex]?.y
+            const showDist = states.showDist
+            const focusedNodeIndex = states.focusedNodeIndex
+            vEles.nodesEdgesCtx.clearRect(0, 0, CANVAS_W, CANVAS_H)
+            paintEdges(vEles, nodes, edges)
+            paintNodes(vEles, nodes, focusedNodeIndex)
+            if (showDist) paintEdgeTags(vEles, edges, nodes)
+        }
+
+        setEffect('messages', (states, vEles) => {
+            vEles.msgCountEle.textContent = states.messages.length.toString()
         })
 
-        esv.setEffect('messagesCount', (states, vEles) => {
+        setEffect('focusedNodeIndex', (states, vEles) => {
+            const nodes = states.nodes
+            const focusedNodeIndex = states.focusedNodeIndex
+            const edges = getEdges(nodes, states.maxFindDst)
+            const connectionsCount = countConnections(focusedNodeIndex, edges)
+            vEles.connectionsCountEle.textContent = connectionsCount.toString()
+            vEles.nodeIDEle.textContent = nodes[focusedNodeIndex]?.ID
+            vEles.nodeXEle.textContent = nodes[focusedNodeIndex]?.x
+            vEles.nodeYEle.textContent = nodes[focusedNodeIndex]?.y
+            nodesEdgesRePaint(states, vEles)
+        })
+
+        setEffect('messagesCount', (states, vEles) => {
             const { msgCountEle } = vEles
         })
 
-        esv.setEffect('now', (states, vEles) => {
+        setEffect('now', (states, vEles) => {
+            if (states.messages.length === 0) {
+                vEles.messagesCtx.clearRect(0, 0, CANVAS_W, CANVAS_H)
+                return
+            }
             // 更新画布
             const nodes = states.nodes
             const edges = getEdges(nodes, states.maxFindDst)
             const msgs = states.messages
             const showDist = states.showDist
             const focusedNodeIndex = states.focusedNodeIndex
-
-            vEles.bufferCtx.clearRect(0, 0, vEles.bufferCanvas.width, vEles.bufferCanvas.height)
-
-            paintEdges(vEles, nodes, edges)
-            paintNodes(vEles, nodes, focusedNodeIndex)
+            vEles.messagesCtx.clearRect(0, 0, CANVAS_W, CANVAS_H)
             paintMessages(vEles, nodes, msgs, performance.now())
-            if (showDist) paintEdgeTags(vEles, edges, nodes)
-
-            vEles.ctx.clearRect(0, 0, vEles.canvas.width, vEles.canvas.height)
-            vEles.ctx.drawImage(vEles.bufferCanvas, 0, 0)
         })
-        esv.on('init-nodes', states => {
+        on('init-nodes', states => {
             let nodes = []
             for (let i = 1; i < 12; i++) {
                 nodes.push({
@@ -350,7 +363,7 @@
             }
             states.nodes = nodes
         })
-        esv.on('send-message', (states, src = 0, dst = 0, sendTime = performance.now(), TTL = 0) => {
+        on('send-message', (states, src = 0, dst = 0, sendTime = performance.now(), TTL = 0) => {
             states.messagesCount++
             states.messages = [
                 ...states.messages,
@@ -364,12 +377,12 @@
             ]
         })
 
-        esv.on('send-message-button-click', (states) => {
+        on('send-message-button-click', (states) => {
             const focusedNodeIndex = states.focusedNodeIndex
             const edges = getEdges(states.nodes, states.maxFindDst)
             for (let i in edges) {
                 if (edges[i].node1 === states.focusedNodeIndex) {
-                    esv.emit(
+                    emit(
                         'send-message',
                         states.focusedNodeIndex,
                         edges[i].node2,
@@ -378,7 +391,7 @@
                     )
                 }
                 else if (edges[i].node2 === states.focusedNodeIndex) {
-                    esv.emit(
+                    emit(
                         'send-message',
                         states.focusedNodeIndex,
                         edges[i].node1,
@@ -389,18 +402,18 @@
             }
         })
 
-        esv.on('show-dst', states => {
+        on('show-dst', states => {
             states.showDist = !states.showDist
         })
 
-        esv.on('remove-node', states => {
+        on('remove-node', states => {
             states.nodes = states.nodes.filter((item, idx) =>
                 (idx !== states.focusedNodeIndex)
             )
             if (states.focusedNodeIndex >= states.nodes.length)
                 states.focusedNodeIndex = states.nodes.length - 1
         })
-        esv.on('canvas-mousedown', (states, e = new MouseEvent) => {
+        on('canvas-mousedown', (states, e = new MouseEvent) => {
             const x = e.offsetX / C_VIEW_W * CANVAS_W
             const y = e.offsetY / C_VIEW_H * CANVAS_H
             const nodeIndex = mouseOnNode(states.nodes, x, y)
@@ -409,7 +422,7 @@
                 states.nodeIsPickedUp = nodeIndex
             }
         })
-        esv.on('canvas-mousemove', (states, e = new MouseEvent) => {
+        on('canvas-mousemove', (states, e = new MouseEvent) => {
             const x = e.offsetX / C_VIEW_W * CANVAS_W
             const y = e.offsetY / C_VIEW_H * CANVAS_H
             const i = states.nodeIsPickedUp
@@ -420,14 +433,14 @@
                 states.nodes = newNodes
             }
         })
-        esv.on('canvas-mouseup', (states, e = new MouseEvent) => {
+        on('canvas-mouseup', (states, e = new MouseEvent) => {
             const x = e.offsetX / C_VIEW_W * CANVAS_W
             const y = e.offsetY / C_VIEW_H * CANVAS_H
             if (states.nodeIsPickedUp !== -1) {
                 states.nodeIsPickedUp = -1
             }
         })
-        esv.on('add-node', states => {
+        on('add-node', states => {
             states.nodesCount++
             states.nodes = [
                 ...states.nodes,
@@ -439,18 +452,18 @@
             ]
             states.focusedNodeIndex = states.nodes.length - 1
         })
-        esv.on('ttl-change', (states, e = new Event) => {
+        on('ttl-change', (states, e = new Event) => {
             states.maxTTL = e.currentTarget.value
         })
-        esv.on('max-find-dst-change', (states, e = new Event) => {
+        on('max-find-dst-change', (states, e = new Event) => {
             states.maxFindDst = e.currentTarget.value
         })
-        esv.on('tick', (states, now = performance.now()) => {
+        on('tick', (states, now = performance.now()) => {
             states.messages = getNewMessages(states, now)
             states.now = now
         })
 
-        esv.emit('init-nodes')
+        emit('init-nodes')
 
         mainLoop(performance.now())
 
@@ -461,7 +474,7 @@
 
         function mainLoop(now = performance.now()) {
             requestAnimationFrame(now => { mainLoop(now) })
-            esv.emit('tick', now)
+            emit('tick', now)
         }
         function getNewMessages(states, now = performance.now()) {
             if (states.messages.length === 0) return states.messages
@@ -514,54 +527,54 @@
             return newMessages
         }
         function paintEdges(vEles, nodes, edges) {
-            vEles.bufferCtx.strokeStyle = 'rgb(0, 120, 212)'
-            vEles.bufferCtx.lineWidth = 2
+            vEles.nodesEdgesCtx.strokeStyle = 'rgb(0, 120, 212)'
+            vEles.nodesEdgesCtx.lineWidth = 2
             edges.forEach(edge => {
                 const x1 = nodes[edge.node1].x
                 const y1 = nodes[edge.node1].y
                 const x2 = nodes[edge.node2].x
                 const y2 = nodes[edge.node2].y
-                vEles.bufferCtx.beginPath()
-                vEles.bufferCtx.moveTo(x1, y1)
-                vEles.bufferCtx.lineTo(x2, y2)
-                vEles.bufferCtx.stroke()
+                vEles.nodesEdgesCtx.beginPath()
+                vEles.nodesEdgesCtx.moveTo(x1, y1)
+                vEles.nodesEdgesCtx.lineTo(x2, y2)
+                vEles.nodesEdgesCtx.stroke()
             })
         }
         function paintNodes(vEles, nodes, focusedNodeIndex) {
             const focusedNode = nodes[focusedNodeIndex]
             if (focusedNode === undefined) return
-            vEles.bufferCtx.lineWidth = 4
+            vEles.nodesEdgesCtx.lineWidth = 4
             // 绘制圆点
-            vEles.bufferCtx.strokeStyle = '#0078d4'
-            vEles.bufferCtx.fillStyle = '#c7e0f4'
+            vEles.nodesEdgesCtx.strokeStyle = '#0078d4'
+            vEles.nodesEdgesCtx.fillStyle = '#c7e0f4'
             nodes.forEach(node => {
-                vEles.bufferCtx.beginPath()
-                vEles.bufferCtx.arc(node.x, node.y, NODE_RADIUS, 0, 2 * Math.PI)
-                vEles.bufferCtx.stroke()
-                vEles.bufferCtx.fill()
+                vEles.nodesEdgesCtx.beginPath()
+                vEles.nodesEdgesCtx.arc(node.x, node.y, NODE_RADIUS, 0, 2 * Math.PI)
+                vEles.nodesEdgesCtx.stroke()
+                vEles.nodesEdgesCtx.fill()
             })
             // 绘制聚焦圆环
-            vEles.bufferCtx.strokeStyle = '#0078d4af'
-            vEles.bufferCtx.beginPath()
-            vEles.bufferCtx.arc(focusedNode.x, focusedNode.y, FOCUS_RADIUS, 0, 2 * Math.PI)
-            vEles.bufferCtx.stroke()
+            vEles.nodesEdgesCtx.strokeStyle = '#0078d4af'
+            vEles.nodesEdgesCtx.beginPath()
+            vEles.nodesEdgesCtx.arc(focusedNode.x, focusedNode.y, FOCUS_RADIUS, 0, 2 * Math.PI)
+            vEles.nodesEdgesCtx.stroke()
             // 绘制标签
-            vEles.bufferCtx.fillStyle = '#0078d4'
-            vEles.bufferCtx.font = '20px consolas'
-            vEles.bufferCtx.textAlign = 'center'
-            vEles.bufferCtx.textBaseline = 'middle'
+            vEles.nodesEdgesCtx.fillStyle = '#0078d4'
+            vEles.nodesEdgesCtx.font = '20px consolas'
+            vEles.nodesEdgesCtx.textAlign = 'center'
+            vEles.nodesEdgesCtx.textBaseline = 'middle'
             nodes.forEach(node => {
                 const IDText = node.ID.toString()
-                vEles.bufferCtx.fillText(IDText, node.x, node.y)
+                vEles.nodesEdgesCtx.fillText(IDText, node.x, node.y)
             })
         }
         function paintMessages(vEles, nodes, msgs, now) {
-            vEles.bufferCtx.lineWidth = 2
-            vEles.bufferCtx.font = '20px consolas'
-            vEles.bufferCtx.textAlign = 'center'
-            vEles.bufferCtx.textBaseline = 'middle'
-            vEles.bufferCtx.fillStyle = '#dff6dd'
-            vEles.bufferCtx.strokeStyle = '#107c10'
+            vEles.messagesCtx.lineWidth = 2
+            vEles.messagesCtx.font = '20px consolas'
+            vEles.messagesCtx.textAlign = 'center'
+            vEles.messagesCtx.textBaseline = 'middle'
+            vEles.messagesCtx.fillStyle = '#dff6dd'
+            vEles.messagesCtx.strokeStyle = '#107c10'
             // 绘制圆点
             for (let i = 0; i < msgs.length; i++) {
                 const msg = msgs[i]
@@ -575,15 +588,15 @@
                 const coveredY = (dstNode.y - srcNode.y) * percentage
                 const x = srcNode.x + coveredX
                 const y = srcNode.y + coveredY
-                vEles.bufferCtx.beginPath()
-                vEles.bufferCtx.arc(x, y, MSG_RADIUS, 0, 2 * Math.PI)
-                vEles.bufferCtx.fill()
-                vEles.bufferCtx.beginPath()
-                vEles.bufferCtx.arc(x, y, MSG_RADIUS, 0, 2 * Math.PI)
-                vEles.bufferCtx.stroke()
+                vEles.messagesCtx.beginPath()
+                vEles.messagesCtx.arc(x, y, MSG_RADIUS, 0, 2 * Math.PI)
+                vEles.messagesCtx.fill()
+                vEles.messagesCtx.beginPath()
+                vEles.messagesCtx.arc(x, y, MSG_RADIUS, 0, 2 * Math.PI)
+                vEles.messagesCtx.stroke()
             }
             // 绘制标签
-            vEles.bufferCtx.fillStyle = '#222222'
+            vEles.messagesCtx.fillStyle = '#222222'
             for (let i = 0; i < msgs.length; i++) {
                 const msg = msgs[i]
                 const srcNode = nodes[msg.src]
@@ -597,24 +610,24 @@
                 const x = srcNode.x + coveredX
                 const y = srcNode.y + coveredY
                 const IDText = msg.ID.toString()
-                vEles.bufferCtx.fillText(IDText, x, y + MSG_RADIUS + 10)
+                vEles.messagesCtx.fillText(IDText, x, y + MSG_RADIUS + 10)
             }
         }
         function paintEdgeTags(vEles, edges, nodes) {
-            vEles.bufferCtx.fillStyle = '#222222'
-            vEles.bufferCtx.font = '20px consolas'
-            vEles.bufferCtx.textAlign = 'center'
-            vEles.bufferCtx.textBaseline = 'middle'
+            vEles.nodesEdgesCtx.fillStyle = '#222222'
+            vEles.nodesEdgesCtx.font = '20px consolas'
+            vEles.nodesEdgesCtx.textAlign = 'center'
+            vEles.nodesEdgesCtx.textBaseline = 'middle'
             edges.forEach(edge => {
                 const dstText = edge.dst.toFixed(2)
-                const textWidth = vEles.bufferCtx.measureText(dstText).width
+                const textWidth = vEles.nodesEdgesCtx.measureText(dstText).width
                 const x1 = nodes[edge.node1].x
                 const y1 = nodes[edge.node1].y
                 const x2 = nodes[edge.node2].x
                 const y2 = nodes[edge.node2].y
                 const xText = (x1 + x2) / 2
                 const yText = (y1 + y2) / 2
-                vEles.bufferCtx.fillText(dstText, xText, yText)
+                vEles.nodesEdgesCtx.fillText(dstText, xText, yText)
             })
         }
         function createESV() {
