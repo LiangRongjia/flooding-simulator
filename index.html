@@ -337,6 +337,9 @@
             vEles.messagesCtx.clearRect(0, 0, CANVAS_W, CANVAS_H)
             paintMessages(vEles, nodes, msgs, performance.now())
         })
+        setEffect('showDist',(state,vEles)=>{
+            nodesEdgesRePaint(state, vEles)
+        })
         on('init-nodes', states => {
             let nodes = []
             for (let i = 1; i < 12; i++) {
