@@ -238,60 +238,119 @@
             dst: 0
         }
 
-        createESV.viewElements = (() => {
-            const nodeCountEle = document.getElementById('node-count')
-            const connectionsCountEle = document.getElementById('connections-count')
-            const nodeIDEle = document.getElementById('node-ID')
-            const nodeXEle = document.getElementById('node-x')
-            const nodeYEle = document.getElementById('node-y')
-            const msgCountEle = document.getElementById('msg-count')
-            const forwardDelaySetter = document.getElementById('forward-delay')
+        const view = {
+            nodeX: document.getElementById('node-x'),
+            nodeY: document.getElementById('node-y'),
+            nodeID: document.getElementById('node-ID'),
+            maxTTL: document.getElementById('ttl-setter'),
+            msgCount: document.getElementById('msg-count'),
+            nodeCount: document.getElementById('node-count'),
+            forwardDelay: document.getElementById('forward-delay'),
+            connectionsCount: document.getElementById('connections-count'),
+            ...(() => {
+                /** @type {HTMLCanvasElement} */
+                const nodesEdgesCanvas = document.getElementById('nodes-edges-canvas')
+                const nodesEdgesCtx = nodesEdgesCanvas.getContext('2d')
+                return { nodesEdgesCanvas, nodesEdgesCtx }
+            })(),
+            ...(() => {
+                /** @type {HTMLCanvasElement} */
+                const messagesCanvas = document.getElementById('messages-canvas')
+                const messagesCtx = messagesCanvas.getContext('2d')
+                return { messagesCanvas, messagesCtx }
+            })(),
+            INIT: () => {
+                document.getElementById('add-node-button')
+                    .addEventListener('click', () => { app.ADD_NODE() })
+                document.getElementById('remove-node-button')
+                    .addEventListener('click', () => { app.DELETE_NODE() })
+                document.getElementById('send-message-button')
+                    .addEventListener('click', (e) => { app.SEND_MESSAGE() })
+                document.getElementById('show-dst-button')
+                    .addEventListener('click', (e) => { app.TOOGLE_DST_VISIBLE() })
+                document.getElementById('forward-delay')
+                    .addEventListener('change', (e) => { app.SET_FORWARD_DELAY(e.target.value) })
+                document.getElementById('ttl-setter')
+                    .addEventListener('change', (e) => { app.SET_MAX_TTL(e.currentTarget.value) })
+                document.getElementById('max-find-dst-setter')
+                    .addEventListener('change', (e) => { app.SET_MAX_FIND_DST(e.currentTarget.value) })
 
-            document.getElementById('remove-node-button').addEventListener('click', () => { emit('remove-node') })
-            document.getElementById('add-node-button').addEventListener('click', () => { emit('add-node') })
-            document.getElementById('ttl-setter').addEventListener('change', (e) => { emit('ttl-change', e) })
-            document.getElementById('max-find-dst-setter').addEventListener('change', (e) => { emit('max-find-dst-change', e) })
-            document.getElementById('send-message-button').addEventListener('click', (e) => { emit('send-message-button-click') })
-            document.getElementById('show-dst-button').addEventListener('click', (e) => { emit('show-dst', e) })
-            document.getElementById('forward-delay').addEventListener('change', (e) => { emit('forward-delay-change', e) })
-            document.getElementById('ttl-setter').value = DEFAULT_MAX_TTL
-            document.getElementById('max-find-dst-setter').value = DEFAULT_MAX_FIND_DST
-            document.getElementById('forward-delay').value = DEFAULT_FORWARD_DELAY
+                document.getElementById('ttl-setter').value = DEFAULT_MAX_TTL
+                document.getElementById('max-find-dst-setter').value = DEFAULT_MAX_FIND_DST
+                document.getElementById('forward-delay').value = DEFAULT_FORWARD_DELAY
 
+                view.nodesEdgesCanvas.style = `height: ${C_VIEW_H}px; width: ${C_VIEW_W}px;`
+                view.nodesEdgesCanvas.width = CANVAS_W
+                view.nodesEdgesCanvas.height = CANVAS_H
 
-            let nodesEdgesCanvas = document.getElementById('nodes-edges-canvas')
-            let nodesEdgesCtx = nodesEdgesCanvas.getContext('2d')
-            nodesEdgesCanvas.style = `height: ${C_VIEW_H}px; width: ${C_VIEW_W}px;`
-            nodesEdgesCanvas.width = CANVAS_W
-            nodesEdgesCanvas.height = CANVAS_H
+                view.messagesCanvas.style = `height: ${C_VIEW_H}px; width: ${C_VIEW_W}px; margin-top: ${-C_VIEW_H}px`
+                view.messagesCanvas.width = CANVAS_W
+                view.messagesCanvas.height = CANVAS_H
 
-            let messagesCanvas = document.getElementById('messages-canvas')
-            let messagesCtx = messagesCanvas.getContext('2d')
-            messagesCanvas.style = `height: ${C_VIEW_H}px; width: ${C_VIEW_W}px; margin-top: ${-C_VIEW_H}px`
-            messagesCanvas.width = CANVAS_W
-            messagesCanvas.height = CANVAS_H
-            messagesCanvas.addEventListener('mouseup', (e) => { emit('canvas-mouseup', e) })
-            messagesCanvas.addEventListener('mousedown', (e) => { emit('canvas-mousedown', e) })
-            messagesCanvas.addEventListener('mousemove', (e) => { emit('canvas-mousemove', e) })
-            // messagesCanvas.addEventListener('touchstart', (e) => { emit('canvas-mouseup', e) })
-            // messagesCanvas.addEventListener('touchend', (e) => { emit('canvas-mousedown', e) })
-            // messagesCanvas.addEventListener('touchmove', (e) => { emit('canvas-mousemove', e) })
+                view.messagesCanvas.addEventListener('mouseup', (e) => {
+                    const x = e.offsetX / C_VIEW_W * CANVAS_W
+                    const y = e.offsetY / C_VIEW_H * CANVAS_H
+                    app.PUT_DOWN_NODE()
+                })
+                view.messagesCanvas.addEventListener('mousedown', (e) => {
+                    const x = e.offsetX / C_VIEW_W * CANVAS_W
+                    const y = e.offsetY / C_VIEW_H * CANVAS_H
+                    const nodeIndex = mouseOnNode(store.nodes, x, y)
+                    app.FOCUS_NODE(nodeIndex)
+                    app.PICK_UP_NODE(store.focusedNodeIndex)
+                })
+                view.messagesCanvas.addEventListener('mousemove', (e) => {
+                    const i = store.nodeIsPickedUp
+                    if (i === -1) return
+                    const x = e.offsetX / C_VIEW_W * CANVAS_W
+                    const y = e.offsetY / C_VIEW_H * CANVAS_H
+                    let newNodes = [...store.nodes]
+                    newNodes[i].x = x
+                    newNodes[i].y = y
+                    store.SET_NODES(newNodes)
+                })
+            },
+            UPDATE_NODE_COUNT: () => {
+                view.nodeCount.innerText = store.nodes.length
+            },
+            UPDATE_CONNECTIONS: () => {
+                if (store.focusedNodeIndex === -1) {
+                    view.connectionsCount.textContent = ''
+                    return
+                }
+                const edges = getEdges(store.nodes, store.maxFindDst)
+                const count = countConnections(store.focusedNodeIndex, edges)
+                view.connectionsCount.innerText = count
+            },
+            UPDATE_NODE_ID: () => {
+                view.nodeID.textContent = store.focusedNodeIndex === -1 ? '' : store.focusedNodeIndex
+            },
+            UPDATE_NODE_X: () => {
+                const focusedNode = store.nodes[store.focusedNodeIndex]
+                view.nodeX.textContent = focusedNode ? focusedNode.x : ''
+            },
+            UPDATE_NODE_Y: () => {
+                const focusedNode = store.nodes[store.focusedNodeIndex]
+                view.nodeY.textContent = focusedNode ? focusedNode.y : ''
+            },
+            UPDATE_MSG_COUNT: () => {
+                view.msgCount.textContent = store.messages.length
+            },
+            UPDATE_NODES_EDGES_CVS: () => {
+                const nodeIndex = store.focusedNodeIndex
+                const edges = getEdges(store.nodes, store.maxFindDst)
+                view.nodesEdgesCtx.clearRect(0, 0, CANVAS_W, CANVAS_H)
+                paintEdges(view, store.nodes, edges)
+                paintNodes(view, store.nodes, store.focusedNodeIndex)
+                if (store.dstVisible) paintEdgeTags(view, edges, store.nodes)
+            },
+            UPDATE_MSG_CVS: () => {
+                view.messagesCtx.clearRect(0, 0, CANVAS_W, CANVAS_H)
+                paintMessages(view, store.nodes, store.messages, store.now)
+            },
+        }
 
-            return {
-                nodeCountEle,
-                connectionsCountEle,
-                nodeIDEle,
-                nodeXEle,
-                nodeYEle,
-                msgCountEle,
-                messagesCanvas,
-                messagesCtx,
-                nodesEdgesCanvas,
-                nodesEdgesCtx,
-            }
-        })()
-
-        createESV.defaultState = {
+        const store = {
             now: 0,
             nodes: [, defaultNode].slice(0, 0),
             messages: [, defaultMessage].slice(0, 0),
@@ -301,191 +360,154 @@
             maxFindDst: DEFAULT_MAX_FIND_DST,
             messagesCount: 0,
             nodesCount: 11,
-            showDist: false,
-            forwardDelay: 100
+            dstVisible: false,
+            forwardDelay: 100,
+            SET_NODES_COUNT: (val = 0) => {
+                store.nodesCount = val
+            },
+            SET_NODES: (nodes = [defaultNode]) => {
+                store.nodes = nodes
+                view.UPDATE_NODE_X()
+                view.UPDATE_NODE_Y()
+                view.UPDATE_NODE_ID()
+                view.UPDATE_CONNECTIONS()
+                view.UPDATE_NODES_EDGES_CVS()
+                view.UPDATE_NODE_COUNT()
+            },
+            SET_FOCUSED_NODE_INDEX: (val = 0) => {
+                store.focusedNodeIndex = val
+                view.UPDATE_NODE_X()
+                view.UPDATE_NODE_Y()
+                view.UPDATE_NODE_ID()
+                view.UPDATE_CONNECTIONS()
+                view.UPDATE_NODES_EDGES_CVS()
+            },
+            SET_MAX_TTL: (val = 0) => {
+                store.maxTTL = val
+            },
+            SET_FORWARD_DELAY: (val = 0) => {
+                store.forwardDelay = val
+            },
+            SET_MAX_FIND_DST: (val = 0) => {
+                store.maxFindDst = val
+            },
+            SET_DST_VISIBLE: (val = false) => {
+                store.dstVisible = val
+                view.UPDATE_NODES_EDGES_CVS()
+            },
+            MSGS_COUNT_INC: () => {
+                store.messagesCount++
+            },
+            SET_PICKED_UP_NODE_INDEX: (val = 0) => {
+                store.nodeIsPickedUp = val
+            },
+            SET_NOW: (val = 0) => {
+                store.now = val
+                store.UPDATE_MSG()
+            },
+            UPDATE_MSG: () => {
+                store.messages = getNewMessages(store, store.now)
+                view.UPDATE_MSG_COUNT()
+                view.UPDATE_MSG_CVS()
+            },
+            SET_MSGS: (newMsgs = [defaultMessage]) => {
+                store.messages = newMsgs
+                store.UPDATE_MSG()
+            }
         }
 
-        const { emit, on, setEffect } = createESV()
-
-        setEffect('nodes', (states, vEles) => {
-            const nodes = states.nodes
-            const nodeIndex = states.focusedNodeIndex
-            const edges = getEdges(nodes, states.maxFindDst)
-            const connectionsCount = countConnections(nodeIndex, edges)
-            const showDist = states.showDist
-            const focusedNodeIndex = states.focusedNodeIndex
-            vEles.nodeCountEle.textContent = nodes.length
-            vEles.connectionsCountEle.textContent = connectionsCount
-            vEles.nodeIDEle.textContent = nodes[nodeIndex]?.ID
-            vEles.nodeXEle.textContent = nodes[nodeIndex]?.x
-            vEles.nodeYEle.textContent = nodes[nodeIndex]?.y
-            nodesEdgesRePaint(states, vEles)
-        })
-        setEffect('maxFindDst', (state, vEles) => {
-            nodesEdgesRePaint(state, vEles)
-        })
-        setEffect('messages', (states, vEles) => {
-            vEles.msgCountEle.textContent = states.messages.length.toString()
-        })
-        setEffect('focusedNodeIndex', (states, vEles) => {
-            const nodes = states.nodes
-            const focusedNodeIndex = states.focusedNodeIndex
-            const edges = getEdges(nodes, states.maxFindDst)
-            const connectionsCount = countConnections(focusedNodeIndex, edges)
-            vEles.connectionsCountEle.textContent = connectionsCount.toString()
-            vEles.nodeIDEle.textContent = nodes[focusedNodeIndex]?.ID
-            vEles.nodeXEle.textContent = nodes[focusedNodeIndex]?.x
-            vEles.nodeYEle.textContent = nodes[focusedNodeIndex]?.y
-            nodesEdgesRePaint(states, vEles)
-        })
-        setEffect('messagesCount', (states, vEles) => {
-            const { msgCountEle } = vEles
-        })
-        setEffect('now', (states, vEles) => {
-            if (states.messages.length === 0) {
-                vEles.messagesCtx.clearRect(0, 0, CANVAS_W, CANVAS_H)
-                return
-            }
-            // 更新画布
-            const nodes = states.nodes
-            const edges = getEdges(nodes, states.maxFindDst)
-            const msgs = states.messages
-            const showDist = states.showDist
-            const focusedNodeIndex = states.focusedNodeIndex
-            vEles.messagesCtx.clearRect(0, 0, CANVAS_W, CANVAS_H)
-            paintMessages(vEles, nodes, msgs, performance.now())
-        })
-        setEffect('showDist', (state, vEles) => {
-            nodesEdgesRePaint(state, vEles)
-        })
-        on('init-nodes', states => {
-            let nodes = []
-            for (let i = 1; i < 12; i++) {
-                nodes.push({
-                    ID: i + 1,
-                    x: Math.round((Math.random() - 0.5) * 600 + CANVAS_W / 2),
-                    y: Math.round((Math.random() - 0.5) * 600 + CANVAS_H / 2)
-                })
-            }
-            states.nodes = nodes
-        })
-        on('send-message', (states, src = 0, dst = 0, sendTime = performance.now(), TTL = 0) => {
-            states.messagesCount++
-            states.messages = [
-                ...states.messages,
-                {
-                    ID: states.messagesCount,
-                    sendTime,
-                    TTL,
-                    src,
-                    dst
+        const app = {
+            INIT: () => {
+                const nodes = createNodesRandom(11)
+                store.SET_NODES(nodes)
+            },
+            RUN_ANIMATION: () => {
+                mainLoop(performance.now())
+                function mainLoop(now = performance.now()) {
+                    requestAnimationFrame(now => { mainLoop(now) })
+                    store.SET_NOW(now)
                 }
-            ]
-        })
-        on('send-message-button-click', (states) => {
-            const focusedNodeIndex = states.focusedNodeIndex
-            const edges = getEdges(states.nodes, states.maxFindDst)
-            for (let i in edges) {
-                if (edges[i].node1 === states.focusedNodeIndex) {
-                    emit(
-                        'send-message',
-                        states.focusedNodeIndex,
-                        edges[i].node2,
-                        states.now,
-                        states.maxTTL
-                    )
-                }
-                else if (edges[i].node2 === states.focusedNodeIndex) {
-                    emit(
-                        'send-message',
-                        states.focusedNodeIndex,
-                        edges[i].node1,
-                        states.now,
-                        states.maxTTL
-                    )
-                }
-            }
-        })
-        on('show-dst', states => {
-            states.showDist = !states.showDist
-        })
-        on('remove-node', states => {
-            states.nodes = states.nodes.filter((item, idx) =>
-                (idx !== states.focusedNodeIndex)
-            )
-            if (states.focusedNodeIndex >= states.nodes.length)
-                states.focusedNodeIndex = states.nodes.length - 1
-        })
-        on('canvas-mousedown', (states, e = new MouseEvent) => {
-            const x = e.offsetX / C_VIEW_W * CANVAS_W
-            const y = e.offsetY / C_VIEW_H * CANVAS_H
-            const nodeIndex = mouseOnNode(states.nodes, x, y)
-            if (nodeIndex !== -1) {
-                states.focusedNodeIndex = nodeIndex
-                states.nodeIsPickedUp = nodeIndex
-            }
-        })
-        on('canvas-mousemove', (states, e = new MouseEvent) => {
-            const x = e.offsetX / C_VIEW_W * CANVAS_W
-            const y = e.offsetY / C_VIEW_H * CANVAS_H
-            const i = states.nodeIsPickedUp
-            if (i !== -1) {
-                let newNodes = [...states.nodes]
-                newNodes[i].x = x
-                newNodes[i].y = y
-                states.nodes = newNodes
-            }
-        })
-        on('canvas-mouseup', (states, e = new MouseEvent) => {
-            const x = e.offsetX / C_VIEW_W * CANVAS_W
-            const y = e.offsetY / C_VIEW_H * CANVAS_H
-            if (states.nodeIsPickedUp !== -1) {
-                states.nodeIsPickedUp = -1
-            }
-        })
-        on('add-node', states => {
-            states.nodesCount++
-            states.nodes = [
-                ...states.nodes,
-                {
-                    ID: states.nodesCount,
+            },
+            ADD_NODE: () => {
+                store.SET_NODES_COUNT(store.nodesCount + 1)
+                store.SET_NODES([...store.nodes, {
+                    ID: store.nodesCount,
                     x: NODE_RADIUS * 4,
                     y: NODE_RADIUS * 4
+                }])
+                store.SET_FOCUSED_NODE_INDEX(store.nodes.length - 1)
+            },
+            SET_MAX_TTL: (val = 0) => {
+                store.SET_MAX_TTL(val)
+            },
+            SET_FORWARD_DELAY: (val = 0) => {
+                store.SET_FORWARD_DELAY(val)
+            },
+            SET_MAX_FIND_DST: (val = 0) => {
+                store.SET_MAX_FIND_DST(val)
+            },
+            TOOGLE_DST_VISIBLE: () => {
+                store.SET_DST_VISIBLE(!store.dstVisible)
+            },
+            SEND_MESSAGE: () => {
+                const srcNode = store.focusedNodeIndex
+                const edges = getEdges(store.nodes, store.maxFindDst)
+                for (let i in edges) {
+                    if (edges[i].node1 === srcNode) {
+                        store.MSGS_COUNT_INC()
+                        store.SET_MSGS([...store.messages, {
+                            ID: store.messagesCount,
+                            sendTime: store.now,
+                            TTL: store.maxTTL,
+                            src: srcNode,
+                            dst: edges[i].node2
+                        }])
+                    }
+                    else if (edges[i].node2 === srcNode) {
+                        store.MSGS_COUNT_INC()
+                        store.SET_MSGS([...store.messages, {
+                            ID: store.messagesCount,
+                            sendTime: store.now,
+                            TTL: store.maxTTL,
+                            src: srcNode,
+                            dst: edges[i].node1
+                        }])
+                    }
                 }
-            ]
-            states.focusedNodeIndex = states.nodes.length - 1
-        })
-        on('ttl-change', (states, e = new Event) => {
-            states.maxTTL = e.currentTarget.value
-        })
-        on('max-find-dst-change', (states, e = new Event) => {
-            states.maxFindDst = parseInt(e.currentTarget.value)
-        })
-        on('tick', (states, now = performance.now()) => {
-            states.messages = getNewMessages(states, now)
-            states.now = now
-        })
-        on('forward-delay-change', (state, e = new Event) => {
-            state.forwardDelay = parseInt(e.currentTarget.value)
-        })
-
-        emit('init-nodes')
-
-        mainLoop(performance.now())
-
-
-
-
-
-
-        function mainLoop(now = performance.now()) {
-            requestAnimationFrame(now => { mainLoop(now) })
-            emit('tick', now)
+            },
+            DELETE_NODE: () => {
+                const newNodes = store.nodes.filter(
+                    (item, idx) => idx !== store.focusedNodeIndex
+                )
+                store.SET_NODES(newNodes)
+                if (store.focusedNodeIndex >= store.nodes.length)
+                    store.SET_FOCUSED_NODE_INDEX(store.nodes.length - 1)
+            },
+            FOCUS_NODE: (val = 0) => {
+                store.SET_FOCUSED_NODE_INDEX(val)
+            },
+            PICK_UP_NODE: (val = 0) => {
+                store.SET_PICKED_UP_NODE_INDEX(val)
+            },
+            DRAG_NODE: (x = 0, y = 0) => {
+                const newNodes = [...store.nodes]
+                newNodes[store.nodeIsPickedUp].x = x
+                newNodes[store.nodeIsPickedUp].x = y
+                store.SET_NODES(newNodes)
+            },
+            PUT_DOWN_NODE: () => {
+                store.SET_PICKED_UP_NODE_INDEX(-1)
+            }
         }
-        function getNewMessages(states, now = performance.now()) {
-            if (states.messages.length === 0) return states.messages
-            let newMessages = [...states.messages]
-            const nodes = states.nodes
+
+        view.INIT()
+        app.INIT()
+        app.RUN_ANIMATION()
+
+        function getNewMessages(st, now = performance.now()) {
+            if (st.messages.length === 0) return st.messages
+            let newMessages = [...st.messages]
+            const nodes = st.nodes
             const edges = getEdges(nodes)
             // 更新每个消息包
             for (let i = 0; i < newMessages.length; i++) {
@@ -518,10 +540,10 @@
 
                     if (dst === -1) continue
 
-                    states.messagesCount++
+                    st.messagesCount++
                     newMessages.push({
-                        ID: states.messagesCount,
-                        sendTime: neededTime + msg.sendTime + states.forwardDelay,
+                        ID: st.messagesCount,
+                        sendTime: neededTime + msg.sendTime + st.forwardDelay,
                         TTL: msg.TTL - 1,
                         src: msg.dst,
                         dst: dst
@@ -532,56 +554,57 @@
             }
             return newMessages
         }
-        function paintEdges(vEles, nodes, edges) {
-            vEles.nodesEdgesCtx.strokeStyle = 'rgb(0, 120, 212)'
-            vEles.nodesEdgesCtx.lineWidth = 2
-            vEles.nodesEdgesCtx.beginPath()
+        function createNodesRandom(num = 11) {
+            let nodes = []
+            for (let i = 0; i < num; i++) {
+                nodes.push({
+                    ID: i + 1,
+                    x: Math.round((Math.random() - 0.5) * 600 + CANVAS_W / 2),
+                    y: Math.round((Math.random() - 0.5) * 600 + CANVAS_H / 2)
+                })
+            }
+            return nodes
+        }
+        function paintEdges(ele, nodes, edges) {
+            ele.nodesEdgesCtx.strokeStyle = 'rgb(0, 120, 212)'
+            ele.nodesEdgesCtx.lineWidth = 2
+            ele.nodesEdgesCtx.beginPath()
             edges.forEach(edge => {
                 const x1 = nodes[edge.node1].x
                 const y1 = nodes[edge.node1].y
                 const x2 = nodes[edge.node2].x
                 const y2 = nodes[edge.node2].y
-                vEles.nodesEdgesCtx.moveTo(x1, y1)
-                vEles.nodesEdgesCtx.lineTo(x2, y2)
+                ele.nodesEdgesCtx.moveTo(x1, y1)
+                ele.nodesEdgesCtx.lineTo(x2, y2)
             })
-            vEles.nodesEdgesCtx.stroke()
+            ele.nodesEdgesCtx.stroke()
         }
-        function nodesEdgesRePaint(states, vEles) {
-            const nodes = states.nodes
-            const nodeIndex = states.focusedNodeIndex
-            const edges = getEdges(nodes, states.maxFindDst)
-            const showDist = states.showDist
-            const focusedNodeIndex = states.focusedNodeIndex
-            vEles.nodesEdgesCtx.clearRect(0, 0, CANVAS_W, CANVAS_H)
-            paintEdges(vEles, nodes, edges)
-            paintNodes(vEles, nodes, focusedNodeIndex)
-            if (showDist) paintEdgeTags(vEles, edges, nodes)
-        }
-        function paintNodes(vEles, nodes, focusedNodeIndex) {
-            const focusedNode = nodes[focusedNodeIndex]
-            if (focusedNode === undefined) return
+        function paintNodes(ele, nodes, focusedNodeIndex) {
             // 绘制圆点
             nodes.forEach(node => {
-                vEles.nodesEdgesCtx.drawImage(
+                ele.nodesEdgesCtx.drawImage(
                     ONE_NODE_CIRCLE_CANVAS,
                     node.x - ONE_NODE_CIRCLE_CANVAS.width / 2,
                     node.y - ONE_NODE_CIRCLE_CANVAS.height / 2,
                 )
             })
             // 绘制聚焦圆环
-            vEles.nodesEdgesCtx.drawImage(
-                ONE_NODE_F_CIRCLE_CANVAS,
-                focusedNode.x - ONE_NODE_F_CIRCLE_CANVAS.width / 2,
-                focusedNode.y - ONE_NODE_F_CIRCLE_CANVAS.height / 2,
-            )
+            const focusedNode = nodes[focusedNodeIndex]
+            if (focusedNode !== undefined) {
+                ele.nodesEdgesCtx.drawImage(
+                    ONE_NODE_F_CIRCLE_CANVAS,
+                    focusedNode.x - ONE_NODE_F_CIRCLE_CANVAS.width / 2,
+                    focusedNode.y - ONE_NODE_F_CIRCLE_CANVAS.height / 2,
+                )
+            }
             // 绘制标签
-            vEles.nodesEdgesCtx.fillStyle = '#0078d4'
-            vEles.nodesEdgesCtx.font = '20px consolas'
-            vEles.nodesEdgesCtx.textAlign = 'center'
-            vEles.nodesEdgesCtx.textBaseline = 'middle'
+            ele.nodesEdgesCtx.fillStyle = '#0078d4'
+            ele.nodesEdgesCtx.font = '20px consolas'
+            ele.nodesEdgesCtx.textAlign = 'center'
+            ele.nodesEdgesCtx.textBaseline = 'middle'
             nodes.forEach(node => {
                 const IDText = node.ID.toString()
-                vEles.nodesEdgesCtx.fillText(IDText, node.x, node.y)
+                ele.nodesEdgesCtx.fillText(IDText, node.x, node.y)
             })
         }
         function paintMessages(vEles, nodes, msgs, now) {
@@ -696,79 +719,6 @@
             ctx.stroke()
 
             return canvas
-        }
-        function createESV() {
-            createESV.defaultState = createESV.defaultState
-            // 状态
-            let states = { ...createESV.defaultState }
-            // 视图元素
-            let viewElements = { ...createESV.viewElements }
-            // 事件监听器
-            let listeners = [{ event: '', listener: () => { } }].slice(1)
-            // 状态只读代理
-            let statesGetter = { ...createESV.defaultState }
-            // 状态读写代理
-            let statesProxy = { ...createESV.defaultState }
-
-            // 初始化 statesGetter
-            Object.keys(states).forEach(key => {
-                Object.defineProperty(statesGetter, key, {
-                    get: () => states[key],
-                    set: () => { }
-                })
-            })
-
-            // 初始化 statesProxy
-            Object.keys(states).forEach(key => {
-                Object.defineProperty(statesProxy, key, {
-                    get: () => states[key],
-                    set: (val) => { states[key] = val }
-                })
-            })
-
-            // 默认副作用方法，实现代码智能提示
-            const defaultEffectFunc = (states = statesGetter, vEles = viewElements) => { }
-            // 设置副作用方法，传入 key 和 func，setter
-            const setEffect = (stateKey = '', effectFunc = defaultEffectFunc) => {
-                Object.defineProperty(statesProxy, stateKey, {
-                    get: () => states[stateKey],
-                    set: (val) => {
-                        if (val === states[stateKey]) return
-                        states[stateKey] = val
-                        effectFunc(statesGetter, viewElements)
-                    }
-                })
-                effectFunc(statesGetter, viewElements)
-            }
-
-            const defaultListener = (states = statesProxy) => { }
-            const on = (event = '', listener = defaultListener) => {
-                for (let i in listeners) {
-                    if (listeners[i].event === event) {
-                        listeners[i].listener = listener
-                        return
-                    }
-                }
-                listeners.push({ event, listener })
-            }
-
-            // 触发事件的函数
-            const emit = (e = '', ...args) => {
-                for (let i in listeners) {
-                    if (listeners[i].event === e) {
-                        listeners[i].listener(statesProxy, ...args)
-                        return true
-                    }
-                }
-                console.warn(`[ 未捕获事件 "${e}" ]`)
-                return false
-            }
-
-            return {
-                setEffect,
-                emit,
-                on
-            }
         }
         function countConnections(nodeIndex, edges) {
             return edges.filter(edge => (
